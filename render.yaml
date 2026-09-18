@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: shiftsync-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: ohio                 # matches Neon us-east-2; can't be changed after creation
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+
+      # Neon database (enter these in the Render dashboard)
+      - key: DB_URL
+        sync: false              # jdbc:postgresql://ep-long-recipe-b4rxhxlg.c-6.us-east-2.aws.neon.tech/syncshift?sslmode=require
+      - key: DB_USER
+        sync: false              # neondb_owner
+      - key: DB_PASSWORD
+        sync: false
+
+      # Auth
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION_MINUTES
+        value: "45"
+
+      # App
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false              # * for testing, then your frontend URL
+      - key: SEED_ENABLED
+        value: "true"            # set to "false" after the first successful deploy
