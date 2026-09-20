@@ -23,6 +23,27 @@ public class PermissionService {
         return canManageLocation(user, locationId);
     }
 
+    /** Who's allowed to see a location's on-duty roster: an admin (any
+     * location), a manager (their own managed locations, same rule as
+     * canManageLocation), or a staff member checking a location they're
+     * actually certified at (they need this to know their own clock-in
+     * state, not to browse other locations' rosters). This didn't exist
+     * before — PresenceController.onDutyAt had no permission check at all,
+     * open to any authenticated user for any location. */
+    public boolean canViewPresenceAt(AppUser user, Long locationId) {
+        if (user == null) return false;
+        if (canManageLocation(user, locationId)) return true;
+        return user.getRole() == Role.STAFF
+                && user.getCertifiedLocations().stream().anyMatch(l -> l.getId().equals(locationId));
+    }
+
+    public void requireViewPresence(AppUser user, Long locationId) {
+        if (!canViewPresenceAt(user, locationId)) {
+            throw new co.ke.shiftsync.common.exceptions.UnauthorizedActionException(
+                    "You don't have permission to view this location's on-duty roster.");
+        }
+    }
+
     public boolean canViewAuditLog(AppUser user) {
         return user != null && (user.getRole() == Role.ADMIN || user.getRole() == Role.MANAGER);
     }

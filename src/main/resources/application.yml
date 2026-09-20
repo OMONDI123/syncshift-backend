@@ -68,7 +68,14 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 5
+      # Bumped from 5: the frontend's login bootstrap fires roughly 15-20
+      # requests in a short burst (shifts per location, swaps, presence per
+      # location, notifications, availability, settings), and 5 connections
+      # meant requests were queuing for a Hikari connection under that
+      # burst — worth pairing with the frontend's own burst-reduction fix
+      # (see bootstrapAppData in authStore.ts) rather than relying on either
+      # alone. Neon's free-tier pooler comfortably supports this.
+      maximum-pool-size: 10
       minimum-idle: 0
       connection-timeout: 30000
       max-lifetime: 300000

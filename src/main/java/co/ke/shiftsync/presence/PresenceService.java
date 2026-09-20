@@ -7,6 +7,7 @@ import co.ke.shiftsync.presence.PresenceDtos.ClockRecordResponse;
 import co.ke.shiftsync.schedule.Shift;
 import co.ke.shiftsync.schedule.ShiftRepository;
 import co.ke.shiftsync.security.CurrentUser;
+import co.ke.shiftsync.security.PermissionService;
 import co.ke.shiftsync.user.AppUser;
 import co.ke.shiftsync.ws.RealtimeGateway;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +30,10 @@ public class PresenceService {
     private final ShiftRepository shiftRepository;
     private final CurrentUser currentUser;
     private final RealtimeGateway realtimeGateway;
+    private final PermissionService permissions;
 
     public List<ClockRecord> onDutyAt(Long locationId) {
+        permissions.requireViewPresence(currentUser.get(), locationId);
         return repository.findByLocationIdAndClockOutUtcIsNull(locationId);
     }
 
