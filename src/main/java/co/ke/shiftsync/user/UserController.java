@@ -46,4 +46,14 @@ public class UserController {
     public UserResponse setActive(@PathVariable Long id, @RequestBody SetActiveRequest request) {
         return UserResponse.from(userService.setActive(id, Boolean.TRUE.equals(request.active())));
     }
+
+    /** Requirement #7: "Users configure their notification preferences
+     * (in-app only, or in-app + email simulation)." Open to any authenticated
+     * user for their own account — unlike every other endpoint above, this
+     * one is NOT gated behind requireManageUsers(); see
+     * UserService.updateOwnNotificationChannel(). */
+    @PatchMapping("/me/notification-preference")
+    public UserResponse updateMyNotificationPreference(@Valid @RequestBody NotificationPreferenceRequest request) {
+        return UserResponse.from(userService.updateOwnNotificationChannel(request.notificationChannel()));
+    }
 }

@@ -148,6 +148,7 @@ public class SwapService {
 
         auditService.log(requester.getId(), requester.getName(), AuditEntityType.SWAP, String.valueOf(saved.getId()), "requested_drop",
                 null, null, shift.getLocation().getId());
+        notifyEligiblePickups(saved, requester);
         broadcast(saved);
         return saved;
     }
@@ -165,6 +166,9 @@ public class SwapService {
         swap.setStatus(SwapStatus.PENDING_MANAGER);
         swap.getHistory().add(SwapHistoryEntry.builder().atUtc(Instant.now()).event("Partner accepted").byUserId(actor.getId()).build());
         SwapRequest saved = repository.save(swap);
+        notificationService.send(saved.getRequestedBy(), NotificationType.SWAP_ACCEPTED, "Swap accepted",
+                "%s accepted your swap request. It's now waiting on a manager to approve it."
+                        .formatted(actor.getName()), saved.getShift().getId(), swapId);
         notifyManagers(saved, "Swap needs your approval", "A shift swap was accepted by both staff and is waiting on you.");
         broadcast(saved);
         return saved;
@@ -181,6 +185,9 @@ public class SwapService {
         swap.setStatus(SwapStatus.PENDING_MANAGER);
         swap.getHistory().add(SwapHistoryEntry.builder().atUtc(Instant.now()).event("Picked up").byUserId(picker.getId()).build());
         SwapRequest saved = repository.save(swap);
+        notificationService.send(saved.getRequestedBy(), NotificationType.DROP_CLAIMED, "Your dropped shift was picked up",
+                "%s picked up the shift you dropped. It's now waiting on a manager to approve."
+                        .formatted(picker.getName()), saved.getShift().getId(), swapId);
         notifyManagers(saved, "Drop pickup needs your approval", "Someone picked up an open shift and is waiting on you.");
         broadcast(saved);
         return saved;
@@ -312,6 +319,9 @@ public class SwapService {
             s.setStatus(SwapStatus.EXPIRED);
             s.getHistory().add(SwapHistoryEntry.builder().atUtc(now).event("Expired — unclaimed before the shift").build());
             repository.save(s);
+            notificationService.send(s.getRequestedBy(), NotificationType.DROP_EXPIRED, "Dropped shift expired unclaimed",
+                    "Nobody picked up the shift you dropped, and it's now too close to the start time to claim.",
+                    s.getShift().getId(), s.getId());
             broadcast(s);
         }
     }
@@ -331,6 +341,23 @@ public class SwapService {
     private void notifyManagers(SwapRequest swap, String title, String body) {
         for (AppUser manager : userRepository.findManagersOfLocation(swap.getShift().getLocation().getId())) {
             notificationService.send(manager, NotificationType.APPROVAL_NEEDED, title, body, swap.getShift().getId(), swap.getId());
+        }
+    }
+
+    /** A drop is only useful to staff who could actually pick it up:
+     * certified at the shift's location, excluding the person who dropped
+     * it. This doesn't run the full constraint check (skill/availability/
+     * rest) — that's still enforced at pickUpDrop() / managerApprove() time —
+     * it's just "who should hear a shift became available", matching the
+     * brief's "swap request updates" notification requirement. */
+    private void notifyEligiblePickups(SwapRequest drop, AppUser requester) {
+        Long locationId = drop.getShift().getLocation().getId();
+        for (AppUser staff : userRepository.findStaffCertifiedAtLocation(locationId)) {
+            if (staff.getId().equals(requester.getId())) continue;
+            notificationService.send(staff, NotificationType.DROP_POSTED, "A shift is up for grabs",
+                    "%s dropped a shift at %s. Check the marketplace if you're free."
+                            .formatted(requester.getName(), drop.getShift().getLocation().getName()),
+                    drop.getShift().getId(), drop.getId());
         }
     }
 

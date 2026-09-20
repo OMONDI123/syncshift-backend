@@ -5,6 +5,8 @@ import co.ke.shiftsync.common.AuditEntityType;
 import co.ke.shiftsync.common.Role;
 import co.ke.shiftsync.common.exceptions.NotFoundException;
 import co.ke.shiftsync.common.exceptions.UnauthorizedActionException;
+import co.ke.shiftsync.notification.NotificationService;
+import co.ke.shiftsync.notification.NotificationType;
 import co.ke.shiftsync.security.CurrentUser;
 import co.ke.shiftsync.user.AppUser;
 import co.ke.shiftsync.user.UserRepository;
@@ -13,7 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +27,7 @@ public class AvailabilityService {
     private final UserRepository userRepository;
     private final CurrentUser currentUser;
     private final AuditService auditService;
+    private final NotificationService notificationService;
 
     public List<AvailabilityWindow> forUser(Long userId) {
         return repository.findByUserId(userId);
@@ -39,6 +44,7 @@ public class AvailabilityService {
                 .user(target).type(AvailabilityType.RECURRING).dayOfWeek(dayOfWeek)
                 .startMinutes(startMinutes).endMinutes(endMinutes).available(true).build());
         auditService.log(actor.getId(), actor.getName(), AuditEntityType.AVAILABILITY, String.valueOf(userId), "recurring_set");
+        notifyManagersOfChange(target, "updated their recurring weekly availability");
         return saved;
     }
 
@@ -49,6 +55,8 @@ public class AvailabilityService {
                 .filter(w -> w.getType() == AvailabilityType.RECURRING && dayOfWeek == safe(w.getDayOfWeek()))
                 .forEach(repository::delete);
         auditService.log(actor.getId(), actor.getName(), AuditEntityType.AVAILABILITY, String.valueOf(userId), "recurring_cleared");
+        AppUser target = userRepository.findById(userId).orElseThrow(() -> new NotFoundException("User not found: " + userId));
+        notifyManagersOfChange(target, "cleared a recurring availability window");
     }
 
     @Transactional
@@ -62,6 +70,7 @@ public class AvailabilityService {
                 .user(target).type(AvailabilityType.EXCEPTION).date(date)
                 .startMinutes(0).endMinutes(24 * 60 - 1).available(available).build());
         auditService.log(actor.getId(), actor.getName(), AuditEntityType.AVAILABILITY, String.valueOf(userId), "exception_added");
+        notifyManagersOfChange(target, "added a one-off availability exception for " + date);
         return saved;
     }
 
@@ -71,6 +80,25 @@ public class AvailabilityService {
         AppUser actor = requireCanEdit(window.getUser().getId());
         repository.delete(window);
         auditService.log(actor.getId(), actor.getName(), AuditEntityType.AVAILABILITY, String.valueOf(id), "exception_removed");
+        notifyManagersOfChange(window.getUser(), "removed an availability exception");
+    }
+
+    /** Requirement #7: "Managers receive notifications for ... staff
+     * availability changes." Notifies every manager of every location the
+     * target staff member is certified at (deduplicated, since one manager
+     * can run more than one of them) — skipped for non-STAFF (admins/managers
+     * don't have certified-location availability that a manager needs to
+     * react to). */
+    private void notifyManagersOfChange(AppUser target, String changeDescription) {
+        if (target.getRole() != Role.STAFF) return;
+        Set<AppUser> managersToNotify = new LinkedHashSet<>();
+        for (var location : target.getCertifiedLocations()) {
+            managersToNotify.addAll(userRepository.findManagersOfLocation(location.getId()));
+        }
+        for (AppUser manager : managersToNotify) {
+            notificationService.send(manager, NotificationType.AVAILABILITY_CHANGED, "Staff availability changed",
+                    "%s %s.".formatted(target.getName(), changeDescription), null, null);
+        }
     }
 
     /** Staff edit their own availability. Admins can edit anyone's. Managers

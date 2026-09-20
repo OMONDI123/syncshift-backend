@@ -120,6 +120,21 @@ public class UserService {
         return saved;
     }
 
+    /** Requirement #7's self-service half: any authenticated user can set
+     * THEIR OWN notification channel — no requireManageUsers() gate, since
+     * this is the one profile field every role is allowed to change about
+     * themselves. Contrast with updateUser() above, which is admin-only and
+     * can set this field (and everything else) on someone else's account. */
+    @Transactional
+    public AppUser updateOwnNotificationChannel(NotificationChannel channel) {
+        AppUser actor = currentUser.get();
+        actor.setNotificationChannel(channel);
+        AppUser saved = userRepository.save(actor);
+        auditService.log(actor.getId(), actor.getName(), AuditEntityType.USER, String.valueOf(actor.getId()),
+                "updated_own_notification_preference", null, channel);
+        return saved;
+    }
+
     @Transactional
     public AppUser setActive(Long userId, boolean active) {
         AppUser actor = currentUser.get();

@@ -57,4 +57,11 @@ public class UserDtos {
     }
 
     public record SetActiveRequest(@NotNull Boolean active) {}
+
+    /** Self-service preference update — requirement #7: "Users configure
+     * their notification preferences." Deliberately its own tiny DTO rather
+     * than reusing UpdateUserRequest, since this endpoint is open to any
+     * authenticated user for their OWN record only, not gated by
+     * requireManageUsers() like every other field on UpdateUserRequest. */
+    public record NotificationPreferenceRequest(@NotNull(message = "notificationChannel is required") NotificationChannel notificationChannel) {}
 }
